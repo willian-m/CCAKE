@@ -10,6 +10,29 @@ template class EoM_default<1>;
 template class EoM_default<2>;
 template class EoM_default<3>;
 
+///@brief Computes the inverse Reynolds number associated with the shear viscous tensor.
+///@details Computes the inverse Reynolds number \f$ \frac{\pi^{\mu\nu}\pi_{\mu\nu}}{p} \f$.
+///@tparam D The number of spatial dimensions.
+///@param pi The shear viscous tensor.
+///@param time_squared The square of the time where the inverse Reynolds number will be computed.
+///@return The inverse Reynolds number.
+template<unsigned int D> KOKKOS_FUNCTION
+double EoM_default<D>::get_inverse_Reynolds_shear(double &pi, double &time_squared){
+  return 0; ///TODO: This still needs to be implemented and will depend on
+  //how we deal with the shear tensor.
+}
+
+//@brief Computes the inverse Reynolds number associated with the bulk pressure.
+///@details Computes the inverse Reynolds number \f$ \frac{\pi^{\mu\nu}\pi_{\mu\nu}}{p} \f$.
+///@tparam D The number of spatial dimensions.
+///@param Pi The bulk pressure.
+///@param pressure The equilibrium pressure (obtained from the EoS).
+///@return The inverse Reynolds number.
+template<unsigned int D> KOKKOS_FUNCTION
+double EoM_default<D>::get_inverse_Reynolds_bulk(double &Pi, double &pressure){
+  return Kokkos::fabs(Pi/pressure);
+}
+
 /// @brief Enforces the constraints for the shear viscous tensor \f$ \pi^{\mu\nu} \f$.
 /// @details Enforces the constraints  \f$\pi^{\mu\nu}u_\nu = 0 \f$,
 /// \f$\pi^\mu_\mu = 0 \f$ and \f$ \pi^{\mu\nu} = \pi^{\nu\mu} \f$.
@@ -85,7 +108,7 @@ void EoM_default<D>::reset_pi_tensor(std::shared_ptr<SystemState<D>> sysPtr)
     uu.make_covariant(1,t2);
 
     //pi^00 = u_i u_j pi^{ij}/gamma^2
-    shv(0,0) = 1./gamma/gamma*milne::con(uu,pimin);
+    shv(0,0) = 1./gamma/gamma*milne::con(uu,pimin); ///TODO: For D != 2, a factor tau^2 could be needed here. Should be implemented inside milne::con
 
     //pi^33 = (pi^00 - pi^11 - pi^22)/t2
     double shv33 = shv(0,0);
@@ -99,6 +122,8 @@ void EoM_default<D>::reset_pi_tensor(std::shared_ptr<SystemState<D>> sysPtr)
       shv(3,3) = shv33;
       break;
     default:
+      //TODO: Wrong! shv33 in (1+1D) should be associated to pi^{rr}, hence the expression is different from the one below.
+      //pi^rr = pi^tt + t^2 pi^{eta eta}
       shv33 = shv(0,0)/t2;
       shv(1,1) = shv33;
       break;

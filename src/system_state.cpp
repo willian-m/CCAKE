@@ -379,9 +379,9 @@ void SystemState<D>::reset_neighbour_list(){
   for (int i=0; i<n_particles; ++i)
     device_btrack(i) = device_btrack(i) == -1 ? -1 : Cabana::NeighborList<ListType>::numNeighbor( neighbour_list, i );
 
-  #ifdef DEBUG
-  print_neighbors(0);
-  #endif
+  // #ifdef DEBUG
+  // print_neighbors(0);
+  // #endif
 }
 
 /// @brief Entry point for computing neighbor list. Name kept for compatibility.

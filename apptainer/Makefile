@@ -7,11 +7,13 @@ all: images/ubuntu.sif images/ccake.sif	 ..//EoS/Houston/thermo.h5 images/ccake-
 # ==================================
 
 run-gubser: images/ccake.sif ../build/ccake
+	cp ../input/input_parameters_gubser_checks.yaml ../build
 	singularity exec --cleanenv --bind ../:/CCAKE images/ccake.sif bash -c " \
+	export OMP_NUM_THREADS=64; \
+	export OMP_PROC_BIND=spread \
+	export OMP_PLACES=threads; \
 	cd /CCAKE/build ; \
-	mkdir -p initial_conditions ; \
-	../utilities/gubser_ic_converter.py ../misc/Gubser_checks/ac/Initial_Profile_tau=1fm.dat initial_conditions/gubser_tau_1.0.dat ; \
-	./ccake ../input/input_parameters_gubser_checks.yaml output_gubser ; \
+	./ccake input_parameters_gubser_checks.yaml output_gubser ; \
 	../plotting_scripts/plot_gubser.py ../misc/Gubser_checks/ac output_gubser gubser.png ;"
 
 run-trento: images/ccake.sif ../build/ccake ../EoS/Houston/thermo.h5
@@ -35,21 +37,27 @@ run-1D: images/ccake.sif ../build/ccake
 	cd /CCAKE/build ; \
 	./ccake ../input/input_parameters_1D_check.yaml  output_1D "
 
-run-gubser-gpu:
-	singularity exec --cleanenv --nv --nvccli --bind ../:/CCAKE images/ccake-gpu.sif bash -c " \
-	cd /CCAKE/build ; \
+run-gubser-gpu: ../build-gpu/ccake ../src/* ../include/*
+	singularity exec --cleanenv --nv --no-home --bind ../:/CCAKE images/ccake-gpu.sif bash -c " \
+	cd /CCAKE/build-gpu ; \
 	mkdir -p initial_conditions ; \
 	../utilities/gubser_ic_converter.py ../misc/Gubser_checks/ac/Initial_Profile_tau=1fm.dat initial_conditions/gubser_tau_1.0.dat ; \
 	./ccake ../input/input_parameters_gubser_checks.yaml output_gubser ; \
 	../plotting_scripts/plot_gubser.py ../misc/Gubser_checks/ac output_gubser gubser.png ;"
 
-run-gubser-charges-cosh: images/ccake.sif ../build/ccake
-	singularity exec --cleanenv --bind ../:/CCAKE images/ccake.sif bash -c " \
-	cd /CCAKE/build ; \
-	./ccake ../input/input_parameters_gubser_checks_finite_B_cosh.yaml output_gubser_tau0_1p0_mu0_50_T0_200-cosh ;"
+run-gubser-charges-conformal-gpu: ../build-gpu/ccake ../src/* ../include/*
+	singularity exec --cleanenv --nv --bind ../:/CCAKE \
+	--bind /projects/bbkr/wmatioli:/projetcs \
+	--bind /u/wmatioli/wmatioli/gubser_FO_gpu_apptainer:/u/wmatioli/wmatioli/gubser_FO_gpu_apptainer \
+	images/ccake-gpu.sif bash -c " \
+	cd /CCAKE/build-gpu ; \
+	./ccake ../input/input_parameters_gubser_checks_finite_B_conformal.yaml gubser_gpu_apptainer ;"
 
 run-gubser-charges-conformal: images/ccake.sif ../build/ccake
-	singularity exec --cleanenv --bind ../:/CCAKE images/ccake.sif bash -c " \
+	singularity exec --cleanenv --nv --bind ../:/CCAKE images/ccake.sif bash -c " \
+	export OMP_NUM_THREADS=32; \
+	export OMP_PROC_BIND=spread \
+	export OMP_PLACES=threads; \
 	cd /CCAKE/build ; \
 	./ccake ../input/input_parameters_gubser_checks_finite_B_conformal.yaml output_gubser_tau0_1p0_mu0_50_T0_250-conformal ;"
 
@@ -58,11 +66,10 @@ dbg-gubser-charges-conformal: images/ccake-dev.sif ../build-debug/ccake
 	cd /CCAKE/build-debug ; \
 	gdb --args ./ccake ../input/input_parameters_gubser_checks_finite_B_conformal.yaml output_gubser_tau0_1p0_mu0_50_T0_250-conformal ;"
 
-
 run-gubser-debug: images/ccake-dev.sif ../build-debug/ccake
 	singularity exec --cleanenv --bind ../:/CCAKE images/ccake-dev.sif bash -c " \
 	cd /CCAKE/build-debug ; \
-	gdb --args ./ccake ../input/input_parameters_gubser_checks_finite_B_conformal.yaml output_gubser_tau0_1p0_mu0_50_T0_200-conformal ;"
+	gdb --args ./ccake ../input/input_parameters_gubser_checks_finite_B_conformal.yaml output_gubser_tau0_1p0_mu0_50_T0_250-conformal ;"
 
 
 # ==================================
@@ -98,15 +105,33 @@ images/ccake-gpu.sif: defs/ccake-gpu.def images/nvhpc.sif
 	cd ../build-debug; \
 	ln -sf ../EoS ./
 
+../build-gpu/ccake: ../src/* ../include/* images/ccake-gpu.sif
+	mkdir -p ../build-gpu
+	singularity exec --cleanenv  --no-home --nv --bind ../:/CCAKE images/ccake-gpu.sif bash -c "cd /CCAKE/build-gpu ; \
+	cmake -DCMAKE_BUILD_TYPE='Release' \
+	-D CMAKE_CXX_COMPILER=/usr/local/src/kokkos/bin/nvcc_wrapper .. ; make -j"
+	cd ../build-gpu; \
+	ln -sf ../EoS ./
+
+# ==================================
+# Alias for building recipes
+# ==================================
 build-release: ../build/ccake
 build-debug: ../build-debug/ccake
+build-gpu: ../build-gpu/ccake
+
+# ==================================
+# Recipes for downloading data and setup EoS
+# ==================================
 
 ../EoS/Houston/thermo.h5:
 	mkdir -p ../EoS/Houston
 	wget -O $@  https://zenodo.org/record/6829115/files/thermo.h5?download=1
 
-build-gpu: images/ccake-gpu.sif
-	mkdir -p ../build-gpu
-	singularity exec --cleanenv --nv --bind ../:/CCAKE images/ccake-gpu.sif bash -c "cd /CCAKE/build-gpu ; cmake .. ; make -j"
-	cd ../build-gpu; \
-	ln -sf ../EoS ./
+../eos_conformal_small.h5:
+	singularity exec --cleanenv --bind ../:/CCAKE images/ccake.sif bash -c " \
+	export OMP_NUM_THREADS=16; \
+	export OMP_PROC_BIND=spread \
+	export OMP_PLACES=threads; \
+	cd /CCAKE/build ; \
+	./generate_eos_table 16 conformal ignored ../eos_conformal_small.h5 ;"

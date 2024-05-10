@@ -1,5 +1,5 @@
 Bootstrap: localimage
-From: images/ubuntu.sif
+From: images/nvhpc.sif
 
 %environment
     export LC_ALL=C
@@ -15,22 +15,25 @@ From: images/ubuntu.sif
     git clone https://github.com/kokkos/kokkos.git $KOKKOSSRC
     git clone https://github.com/ECP-copa/Cabana.git $CABANASRC
 
+    export NVCC_WRAPPER=$KOKKOSSRC/bin/nvcc_wrapper
+    sed -i 's/default_arch="sm_70"/default_arch="sm_80"/g' $NVCC_WRAPPER
     # Now we need to build and install Kokkos and Cabana
     mkdir -p $KOKKOSSRC/build
     cd $KOKKOSSRC/build
+    #TODO: Remove the -DKokkos_ENABLE_DEBUG_BOUNDS_CHECK=On before commiting
     cmake -DCMAKE_BUILD_TYPE="Release" \
           -DCMAKE_INSTALL_PREFIX=$PREFIX \
-          -DCMAKE_CXX_COMPILER=g++ \
+          -DCMAKE_CXX_COMPILER=$NVCC_WRAPPER \
           -DCMAKE_CXX_STANDARD=17 \
           -DCMAKE_CXX_EXTENSIONS=Off \
-          -DKokkos_ENABLE_COMPILER_WARNINGS=ON \
           -DKokkos_ENABLE_DEBUG_BOUNDS_CHECK=On \
-          -DKokkos_ENABLE_CUDA=Off \
-          -DKokkos_ENABLE_CUDA_LAMBDA=Off \
+          -DKokkos_ENABLE_COMPILER_WARNINGS=ON \
+          -DKokkos_ENABLE_CUDA=On \
+          -DKokkos_ENABLE_CUDA_LAMBDA=On \
           -DKokkos_ENABLE_OPENMP=On \
           -DKokkos_ENABLE_SERIAL=On \
           -DKokkos_ENABLE_TESTS=Off \
-          -DKokkos_ARCH_SKX=Off $KOKKOSSRC
+          -DKokkos_ARCH_AMPERE80=On $KOKKOSSRC
 
     cmake --build . --target install -j
 
@@ -40,8 +43,8 @@ From: images/ubuntu.sif
           -D CMAKE_CXX_STANDARD=17 \
           -D CMAKE_PREFIX_PATH=$CABANASRC \
           -D CMAKE_INSTALL_PREFIX=$PREFIX \
-          -D CMAKE_CXX_COMPILER=g++\
-          -D Cabana_REQUIRE_CUDA=OFF \
+          -D CMAKE_CXX_COMPILER=$NVCC_WRAPPER \
+          -D Cabana_REQUIRE_CUDA=ON \
           -D Cabana_ENABLE_TESTING=OFF \
           -D Cabana_ENABLE_EXAMPLES=OFF $CABANASRC
 
@@ -55,4 +58,5 @@ From: images/ubuntu.sif
           -DCMAKE_INSTALL_PREFIX="/usr/local" $TRENTOSRC
     make -j 4
     make install
+    mkdir /CCAKE
 

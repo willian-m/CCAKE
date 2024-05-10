@@ -1266,6 +1266,45 @@ void SPHWorkstation<D, TEOM>::regulator(){
       pi[idir][jdir] = device_hydro_spacetime_matrix.access(is, ia, hydro_info::shv, idir, jdir);
     double shv33 = device_hydro_scalar.access(is, ia, hydro_info::shv33);
 
+    // Compute ideal part of the Energy-Momentum tensor
+    // double EMT[D+1][D+1];
+    // EMT[0][0] = (e+p)*u0*u0 - p;
+    // for (int idir=0; idir<D; ++idir){
+    //   EMT[0][idir+1] = (e+p)*u0*u[idir];
+    //   EMT[idir+1][0] = EMT[0][idir+1];
+    //   for (int jdir=idir; jdir<D; ++jdir){
+    //     EMT[idir+1][jdir+1] = (e+p)*u[idir]*u[jdir];
+    //     EMT[jdir+1][idir+1] = EMT[idir+1][jdir+1];
+    //   }
+    // }
+    // for (int idir=0; idir<D-1; ++idir) EMT[idir+1][idir+1] += -p;
+    // if (D == 2){
+    //   EMT[2][2] += -p;
+    // } else {
+    //   EMT[D][D] += -p*t*t;
+    // }
+    // Make a threshold where if the Reynolds number is too high, we will
+    // regulate it back to hydro sane values
+    // const double Reynolds_threshold = .99;
+    // double alpha;
+    // for (int idir=0; idir<D+1; ++idir){
+    //     for (int jdir=idir; jdir<D+1; ++jdir){
+    //       alpha = Kokkos::fabs(pi[idir][jdir]/EMT[idir][jdir]);
+    //       if (alpha > Reynolds_threshold)
+    //         device_hydro_spacetime_matrix.access(is, ia, hydro_info::shv, idir, jdir)
+    //           = pi[idir][jdir]*dampening;
+    //         device_hydro_spacetime_matrix.access(is, ia, hydro_info::shv, jdir, idir)
+    //           = pi[idir][jdir]*dampening;
+    //     }
+    //   }
+
+    //   alpha = Kokkos::fabs(Bulk/p);
+    //   if (alpha > Reynolds_threshold)
+    //     device_hydro_scalar.access(is, ia, hydro_info::Bulk) = Bulk*dampening;
+
+
+    /// Compute the Reynolds number
+    // time diagonal contributions
     double R_shear = pi[0][0]*pi[0][0];
 
     // //Space diagonal components contributions
@@ -1329,6 +1368,82 @@ void SPHWorkstation<D, TEOM>::regulator(){
       device_specific_density.access(is, ia, densities_info::s) = 1.e-3; //Enforce positivity
     } else if (specific_s < 0.0){
       exit(EXIT_FAILURE);
+      //If not frozen, let us try to see if we got outside hydro validty by comparing
+      //ideal and viscous T^{\mu\nu} components
+
+      //Loading variables
+      /*double u0 = device_hydro_scalar.access(is, ia, hydro_info::gamma);
+      double e = device_thermo.access(is, ia, ccake::thermo_info::e);
+      double p = device_thermo.access(is, ia, ccake::thermo_info::p);
+      double u[D];
+      for (int idir=0; idir<D; ++idir)
+        u[idir] = device_hydro_vector.access(is, ia, hydro_info::u, idir);
+      double Bulk = device_hydro_scalar.access(is, ia, hydro_info::Bulk);
+      double pi[D+1][D+1];
+      for (int idir=0; idir<D+1; ++idir)
+      for (int jdir=0; jdir<D+1; ++jdir)
+        pi[idir][jdir] = device_hydro_spacetime_matrix.access(is, ia, hydro_info::shv, idir, jdir);
+
+      //Compute ideal part of the Energy-Momentum tensor
+      double EMT[D+1][D+1];
+      EMT[0][0] = (e+p)*u0*u0 - p;
+      for (int idir=0; idir<D; ++idir){
+        EMT[0][idir+1] = (e+p)*u0*u[idir];
+        EMT[idir+1][0] = (e+p)*u0*u[idir];
+        for (int jdir=0; jdir<D; ++jdir)
+          EMT[idir+1][jdir+1] = (e+p)*u[idir]*u[jdir];
+      }
+      if (D == 2){
+        for (int idir=0; idir<D; ++idir) EMT[idir+1][idir+1] += -p;
+      } else {
+        for (int idir=0; idir<D - 1 ; ++idir) EMT[idir+1][idir+1] += -p;
+        EMT[D][D] += -p*t*t;
+      }
+
+      //Check if we are still in the hydro validity region
+      bool is_valid = true;
+      for (int idir=0; idir<D+1; ++idir){
+        for (int jdir=0; jdir<D+1; ++jdir){
+          if (fabs(pi[idir][jdir]/EMT[idir][jdir]) > 1.0){
+            is_valid = false;
+            break;
+          }
+        }
+      }
+      is_valid = fabs(Bulk/p) < 1.0 && is_valid;
+
+      //Decision making
+      if (!is_valid){
+        //If hydro is outside of its validity, we will do the following:
+        //1. Set entropy to zero
+        //2. Set viscous components to zero
+        //3. Freeze the particle
+        //4. Set particle velocity to zero
+        device_specific_density.access(is, ia, densities_info::s) = 2.e-3;
+        for (int idir=0; idir<D+1; ++idir)
+        for (int jdir=0; jdir<D+1; ++jdir)
+          device_hydro_spacetime_matrix.access(is, ia, hydro_info::shv, idir, jdir) = 0.0;
+        device_hydro_scalar.access(is, ia, hydro_info::Bulk) = 0.0;
+        device_freeze.access(is, ia) = 4;
+        for (int idir=0; idir<D; ++idir)
+          device_hydro_vector.access(is, ia, hydro_info::u, idir) = 0.0;
+        device_hydro_scalar.access(is, ia, hydro_info::gamma) = 1.;
+      } else {
+        //If we are still in the hydro validity region, I am sorry, but you will
+        //have to stop the simulation (good luck analyzing the output!)
+        device_specific_density.access(is, ia, densities_info::s) = 1.e-3;
+        formatted_output::detail("Negative entropy density");
+        std::cout << "Specific entropy: " << specific_s << std::endl;
+        std::cout << "Position: ";
+        for (int idir=0; idir<D; ++idir)
+          std::cout << device_position.access(is,ia,idir) << " ";
+        std::cout << std::endl;
+        std::cout << "Energy density: " << device_thermo.access(is, ia, ccake::thermo_info::e) << std::endl;
+        std::cout << "Pressure: " << device_thermo.access(is, ia, ccake::thermo_info::p) << std::endl;
+        std::cout << "Temperature: " << device_thermo.access(is, ia, ccake::thermo_info::T) << std::endl;
+        std::cout << "FO energy density: " << eFO << std::endl;
+        // exit(EXIT_FAILURE);
+      }*/
     }
   };
   Cabana::simd_parallel_for(simd_policy, regulate, "regulate");
